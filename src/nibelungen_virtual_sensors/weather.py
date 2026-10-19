@@ -1,7 +1,7 @@
 """Wind speed from Open-Meteo, the one model input MKP does not measure.
 
 The calibration used hourly ``wind_speed_10m`` [m/s] of the Open-Meteo
-archive API at (49.9 N, 8.35 E) — the grid point configured in the research
+archive API at (49.9 N, 8.38 E) — the grid point configured in the research
 pipeline (``sensors.open_meteo.location``), kept here so the calibrated c_c
 stays consistent.  The archive lags real time by about five days, so recent
 days are taken from the forecast API (``past_days``), i.e. from a different
