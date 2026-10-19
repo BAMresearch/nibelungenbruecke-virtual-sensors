@@ -1,0 +1,54 @@
+{
+  "_note": "Conventions of the MKP IFC models and of the model/IFC alignment. Read by nibelungen_virtual_sensors.ifc; change here, not in the code.",
+  "structure": {
+    "_note": "superstructure (STB) model: elements that define the bridge frame and the girder section",
+    "pier_head": "Pfeilerkopf E",
+    "cantilever": "Kragarm E-Ost",
+    "pier_axis": "E",
+    "element_id_pset": "Pset_Objektinformation",
+    "element_id_property": "_ID",
+    "element_id_filter": "Ueberbau.Hohlkasten"
+  },
+  "frame": {
+    "_note": "mirror_x: model x = mirror_x * t (the model is the mirror image of the real bridge). model_z0_station: station [m] of the model section z = 0, calibrated against the IFC girder depth (RMS 0.11 m); see ifc/frame.py",
+    "mirror_x": -1.0,
+    "model_z0_station": 4.0
+  },
+  "mapping": {
+    "margin_m": 0.01,
+    "station_tolerance_m": 0.5,
+    "measuring_axis_pattern": "{pier}\\s*([+-])\\s*(\\d{{3,4}})"
+  },
+  "position_text": {
+    "_note": "regular expressions (lower-case text) of the ePset_Position property that describes where in the box girder the sensor sits",
+    "web": "(süd|nörd)lichen?\\s+steg",
+    "web_south_prefix": "süd",
+    "deck": "\\s*oben",
+    "bottom_slab": "\\s*unten",
+    "depth_cm": "(\\d+(?:[.,]\\d+)?)\\s*cm\\s+tief\\s+von\\s+der\\s+innenseite",
+    "centred": "zentriert|mittig"
+  },
+  "sensor_ifc": {
+    "_note": "property sets / properties of the sensor proxies",
+    "ifc_class": "IfcBuildingElementProxy",
+    "identity_pset": "ePset_Kenner",
+    "sensor_flag_property": "Objekt",
+    "sensor_flag_value": "Sensor",
+    "name_property": "Objektname",
+    "channel_pset_prefix": "ePset_Kanal",
+    "channel_name_property": "Bezeichnung",
+    "channel_unit_property": "PhysikalischeGroesse",
+    "output_channel_property": "IntervallAggregation",
+    "output_channel_value": "Endwert",
+    "position_pset": "ePset_Position",
+    "position_text_property": "Bauteilbereich",
+    "orientation_property": "Ausrichtung",
+    "measuring_axis_property": "Messachse",
+    "component_pset": "ePset_Objektinformation",
+    "component_id_property": "BauteilID",
+    "quantity_by_unit": {
+      "°C": "temperature",
+      "mm/m": "inclination"
+    }
+  }
+}

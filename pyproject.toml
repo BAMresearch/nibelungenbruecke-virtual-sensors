@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nibelungen-virtual-sensors"
+version = "0.1.0"
+description = "Virtual sensors (temperature, tilt, displacement, strain) of the Nibelungen bridge digital twin, with credible intervals"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Daniel Andrés Arcones (BAM)" }]
+license = { text = "Proprietary — BAM / MKP project use" }
+dependencies = [
+    "numpy>=1.22",
+    "scipy>=1.8",
+    "pandas>=1.5",
+]
+
+[project.optional-dependencies]
+# Second layer only: read virtual sensors from IFC and map them to the model.
+ifc = ["ifcopenshell>=0.8"]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+nibelungen_virtual_sensors = ["data/*.npz", "data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = ["slow: full-length runs on the production mesh (minutes); run with `pytest -m slow`"]

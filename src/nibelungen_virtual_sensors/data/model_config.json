@@ -1,0 +1,72 @@
+{
+  "_source": "code/config/pipeline_config.yaml (simulation.thermal_3d, simulation.thermomechanical, uq.variants.no_hr) and results/metrics/tilt_offset_no_hr.json, state of 2026-10-09",
+  "mesh_file": "mesh_3d.npz",
+  "input_channels": {
+    "_note": "model input -> default MKP channel name (sensors.mkp of code/config/pipeline_config.yaml); wind speed is not measured by MKP",
+    "air_temperature": "F_plus_000TA_KaS-o-_Avg1",
+    "cavity_temperature": "E_plus_040TI_HSS-u-_Avg",
+    "shortwave_irradiation": "F_plus_000S_KaS-o-_Avg1",
+    "wind_speed": "wind_speed_10m"
+  },
+  "thermal": {
+    "degree": 2,
+    "conductivity": 1.6704,
+    "density": 2400.0,
+    "heat_capacity": 870.0,
+    "initial_temperature": 293.15,
+    "absorptivity": 0.275,
+    "shortwave_radiation_constant": 1.0163,
+    "cavity_convection_coefficient": 10.0,
+    "characteristic_length": 4.0,
+    "air_viscosity": 1.5e-05,
+    "air_prandtl_number": 0.71,
+    "air_thermal_conductivity": 0.025,
+    "boundary_tags": {
+      "top": 9,
+      "bottom": 8,
+      "external": 0,
+      "hole": 42
+    }
+  },
+  "mechanical": {
+    "degree": 2,
+    "solver": "ilu",
+    "E": 34000000000.0,
+    "nu": 0.2,
+    "thermal_expansion": 8e-06,
+    "reference_temperature": 293.15,
+    "clamp": {
+      "fixed_end": "z_min",
+      "face_atol_frac": 0.001
+    }
+  },
+  "uncertainty": {
+    "wind_convection_constant": {
+      "distribution": "LogNormal",
+      "mean": 1.0502,
+      "std": 0.7763
+    },
+    "n_quadrature_nodes": 3,
+    "default_noise_std": {
+      "_source": "0 for every quantity: only the embedded MFU (and, for temperatures, the position) is propagated; the calibrated residual sigma_k belongs to the measured pilot sensors and is added only when noise_std is passed explicitly (paper Sec. 3.5)",
+      "temperature": 0.0,
+      "inclination": 0.0,
+      "displacement": 0.0,
+      "strain": 0.0
+    },
+    "noise_std_by_member": {
+      "_source": "calibrated residual of the pilot sensor in the same member (updated calibration, Table_01 Final); for reference only, not added to virtual sensors",
+      "deck": 0.3152,
+      "bottom_slab": 0.1468,
+      "web_south": 0.4388,
+      "web_north": 0.2168
+    },
+    "position": {
+      "_note": "sensor-position uncertainty of temperature virtual sensors (law of total variance, paper Eq. totvar); prior of src/nibelungen_virtual_sensors/position.py: depth behind the cavity face uniform on [min(d_text, d_ifc) - tolerance_m, max(d_text, d_ifc) + tolerance_m], in the face plane (across and along z) N(0, in_plane_std_m^2), clipped into the member with mapping.margin_m of ifc_config.json; n_samples fixed-seed scrambled Sobol points (seed + index of the member). Defined by the authors, same as code/studies/position_uncertainty. seed 20261023 = study seed 20261013 + 10, so the E+23.3 samples are those of the study. transform(position_uncertainty=False) switches the term off.",
+      "tolerance_m": 0.02,
+      "in_plane_std_m": 0.02,
+      "n_samples": 32,
+      "seed": 20261023
+    }
+  }
+}
