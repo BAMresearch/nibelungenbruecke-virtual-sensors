@@ -118,10 +118,6 @@ The demo does two things:
 1. It predicts "virtual twins" of measured MKP sensors and compares them with the measurements.
 2. It runs the platform call `transform(df)` and writes `examples/demo_output.csv`.
 
-The example data `examples/mkp_sample_2024-06-01_15.csv` uses the MKP channel names.
-
-The notebook `examples/daily_digital_twin_run.ipynb` replays the operational setting: the daily container job queries the data API, calls `transform`, checks the result, writes it back for the dashboard and fails cleanly on missing data. It ends with templates for the image and the schedule.
-
 Results on the report day:
 
 | Twin | Correlation with measurement | Error | Inside 95 % band |
@@ -149,7 +145,7 @@ The twins are explicit sensors at their calibrated positions, so they carry no p
   - A mechanical reading is a linear function of the temperature. One adjoint solve per mechanical sensor, done once per call, therefore replaces a solve per time step and per quadrature node.
   - The solver is ILU-preconditioned GMRES (30–50 iterations), so no factorisation of the 129,000-unknown stiffness matrix is needed (peak memory 1.0 GB).
 - **Element degree.** P2 is the default, as in the calibrated 2-D model. The study in `MODEL_ERRORS_GEOMETRY_DISCRETIZATION.md` of the research repository found that linear (P1) elements leave about 0.3 °C and 20 % (tilt, tip deflection) error at any mesh size, against < 0.1 °C and 1 % for P2. P1 stays available for quick checks: `model_overrides={"thermal": {"degree": 1}, "mechanical": {"degree": 1}}`.
-- **Calibration.** Updated 2-D calibration of the cross-section (`references/Table_01_hr_vs_no_hr_inference_table_no_hr.tex`, "Final"; 0.87 m bottom slab, ν_air = 1.5·10⁻⁵ m²/s); values in `data/model_config.json`.
+- **Calibration.** Updated 2-D calibration of the cross-section; values in `data/model_config.json`.
   - The wind-convection constant c_c is uncertain: LogNormal with mean 1.0502 and standard deviation 0.7763 (c_r = 1.0163 for the shortwave constant).
   - The model runs at the 3 Gauss nodes of this distribution, which is equivalent to an order-2 polynomial chaos.
   - The interval contains only what the calibration propagates: the uncertainty of c_c and, for temperatures, the sensor position. The residual error calibrated at the pilot sensors (0.15–0.44 °C), the part the model does not explain, is not transferred to virtual sensors.
