@@ -64,7 +64,7 @@ Schema: `Timestamp: datetime64[ns]` (UTC), then one `float64` column per channel
 The channel names are those of the MKP data API. Pass `input_channels={"air_temperature": "...", ...}` if the platform uses other names.
 
 **Wind speed** is not measured by MKP. `transform` needs the wind column, which the separate step `add_wind_speed(df)` attaches (no model, so it can run in its own container). By default it fetches hourly `wind_speed_10m` from api.open-meteo.com over HTTPS:
-- **Grid point:** 49.9 N, 8.35 E, the same as the calibration.
+- **Grid point:** 49.9 N, 8.38 E, the same as the calibration.
 - **Endpoint:** the archive endpoint for dates more than 6 days back, the forecast endpoint for recent days.
 - **Without network:** `add_wind_speed(df, 2.7)` attaches a constant in m/s, or add the column yourself.
 
