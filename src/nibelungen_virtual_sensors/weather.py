@@ -27,7 +27,7 @@ from .transform import DEFAULT_INPUT_CHANNELS
 
 log = logging.getLogger(__name__)
 
-LOCATION = (49.9, 8.35)
+LOCATION = (49.9, 8.38)
 _ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 _FORECAST = "https://api.open-meteo.com/v1/forecast"
 _ARCHIVE_LAG_DAYS = 6
