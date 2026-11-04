@@ -145,10 +145,10 @@ The twins are explicit sensors at their calibrated positions, so they carry no p
   - A mechanical reading is a linear function of the temperature. One adjoint solve per mechanical sensor, done once per call, therefore replaces a solve per time step and per quadrature node.
   - The solver is ILU-preconditioned GMRES (30–50 iterations), so no factorisation of the 129,000-unknown stiffness matrix is needed (peak memory 1.0 GB).
 - **Element degree.** P2 is the default, as in the calibrated 2-D model. The study in `MODEL_ERRORS_GEOMETRY_DISCRETIZATION.md` of the research repository found that linear (P1) elements leave about 0.3 °C and 20 % (tilt, tip deflection) error at any mesh size, against < 0.1 °C and 1 % for P2. P1 stays available for quick checks: `model_overrides={"thermal": {"degree": 1}, "mechanical": {"degree": 1}}`.
-- **Calibration.** Updated 2-D calibration of the cross-section; values in `data/model_config.json`.
-  - The wind-convection constant c_c is uncertain: LogNormal with mean 1.0502 and standard deviation 0.7763 (c_r = 1.0163 for the shortwave constant).
-  - The model runs at the 3 Gauss nodes of this distribution, which is equivalent to an order-2 polynomial chaos.
-  - The interval contains only what the calibration propagates: the uncertainty of c_c and, for temperatures, the sensor position. The residual error calibrated at the pilot sensors (0.15–0.44 °C), the part the model does not explain, is not transferred to virtual sensors.
+- **Calibration.** 2-D calibration of the cross-section; values in `data/model_config.json`.
+  - The wind-convection constant c_c is uncertain: LogNormal with median 1.28 and standard deviation 2.052 of ln c_c (c_r = 0.673 for the shortwave constant).
+  - As in the calibration, c_c = 1.28 · exp(2.052 ξ) with ξ standard normal, and the model runs at the 5 Gauss–Hermite nodes in ξ, which is equivalent to an order-4 polynomial chaos.
+  - The interval contains only what the calibration propagates: the uncertainty of c_c and, for temperatures, the sensor position. The calibrated noise of the pilot sensors (0.10–0.39 °C: residual model error and measurement noise), the part the embedding does not explain, is not transferred to virtual sensors.
 - **Validation.**
   - With P2 on the packaged mesh, this package reproduces the stored results of the FEniCSx research code (June 2024 thermal ensemble, June 2025 hindcast) to 7.1e-9 K for temperatures and 1.7e-10 (relative) for tilt and tip displacement, rerun with the updated calibration (`tools/validate_against_pipeline.py`, 11 min, 0.9 GB).
   - Against measurements on the demo day (June 2024), the 95 % intervals of the four pilot sensors contain 100 % of the measured temperatures (table above).

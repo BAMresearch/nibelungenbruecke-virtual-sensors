@@ -15,7 +15,7 @@ from nibelungen_virtual_sensors.fem.mesh import Mesh
 from nibelungen_virtual_sensors.fem.probes import build_probes
 from nibelungen_virtual_sensors.fem.thermal import ThermalModel
 from nibelungen_virtual_sensors.transform import load_model_config
-from nibelungen_virtual_sensors.uq import lognormal_gauss_rule, weighted_moments
+from nibelungen_virtual_sensors.uq import lognormal_hermite_rule, weighted_moments
 
 COARSE = Path(__file__).parent / "data" / "coarse_hinge_mesh.npz"
 
@@ -31,14 +31,16 @@ def mesh():
 
 
 def test_quadrature_matches_pipeline_pce():
-    # results/simulations/pce_no_hr.pkl of the research pipeline (chaospy)
-    nodes, weights = lognormal_gauss_rule(1.0502, 0.7763, 3)
-    np.testing.assert_allclose(nodes, [0.68525864, 2.51141708, 9.20413900], rtol=1e-7)
-    np.testing.assert_allclose(weights, [8.04618962e-01, 1.94164099e-01, 1.21693852e-03], rtol=1e-7)
-    # 3-point Gauss rule is exact for the LogNormal mean and variance
-    mean, var = weighted_moments(nodes[:, None], weights)
-    assert mean[0] == pytest.approx(1.0502, rel=1e-10)
-    assert np.sqrt(var[0]) == pytest.approx(0.7763, rel=1e-10)
+    # nodes of results/simulations/pce_no_hr.pkl (chaospy order-4 Gauss-Hermite in xi, mapped to c_c)
+    nodes, weights = lognormal_hermite_rule(1.28, 2.052, 5)
+    xi = np.array([-2.85697001, -1.35562618, 0.0, 1.35562618, 2.85697001])
+    np.testing.assert_allclose(nodes, 1.28 * np.exp(2.052 * xi), rtol=1e-7)
+    np.testing.assert_allclose(weights, [1.12574113e-02, 2.22075922e-01, 5.33333333e-01, 2.22075922e-01, 1.12574113e-02],
+                               rtol=1e-7)
+    # the 5-point rule is exact for the mean and variance of ln c_c
+    mean, var = weighted_moments(np.log(nodes)[:, None], weights)
+    assert mean[0] == pytest.approx(np.log(1.28), abs=1e-12)
+    assert np.sqrt(var[0]) == pytest.approx(2.052, rel=1e-12)
 
 
 def test_default_degree_is_p2(cfg):

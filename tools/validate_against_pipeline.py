@@ -35,7 +35,7 @@ from nibelungen_virtual_sensors.fem.mesh import Mesh  # noqa: E402
 from nibelungen_virtual_sensors.fem.probes import build_probes  # noqa: E402
 from nibelungen_virtual_sensors.fem.thermal import ThermalModel  # noqa: E402
 from nibelungen_virtual_sensors.transform import _data_path, load_model_config  # noqa: E402
-from nibelungen_virtual_sensors.uq import lognormal_gauss_rule  # noqa: E402
+from nibelungen_virtual_sensors.uq import lognormal_hermite_rule  # noqa: E402
 
 CODE = HERE.parents[1]
 FORCING = ["air_temperature", "inner_temperature", "shortwave_irradiation", "wind_speed"]
@@ -100,7 +100,7 @@ def main() -> None:
     space = Space(mesh, degree)
     thermal = ThermalModel(mesh, cfg["thermal"], space)
     cc = cfg["uncertainty"]["wind_convection_constant"]
-    nodes, _ = lognormal_gauss_rule(cc["mean"], cc["std"], 3)
+    nodes, _ = lognormal_hermite_rule(cc["median"], cc["sigma_ln"], cfg["uncertainty"]["n_quadrature_nodes"])
 
     names = list(THERMAL_SENSORS)
     PT, _, off, _ = build_probes(mesh, ["temperature"] * len(names), np.array(list(THERMAL_SENSORS.values())), space)

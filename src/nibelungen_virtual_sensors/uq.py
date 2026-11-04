@@ -1,56 +1,31 @@
 """Uncertainty propagation of the embedded model-form parameter c_c.
 
-The calibrated model (previous paper, Table 4 "Final") treats the wind
-convection constant c_c as LogNormal with *linear-space* mean and standard
-deviation; σ_ln = √ln(1+(σ/μ)²), μ_ln = ln μ - σ_ln²/2 (same convention as
-``src/simulation/pce_builder.py``).
-
-The pipeline builds an order-p PCE on the (p+1)-point Gaussian quadrature
-of that LogNormal measure.  A degree-p polynomial interpolating the p+1
-Gauss nodes has its mean and variance integrated exactly by the same rule,
-so the PCE moments equal the weighted moments of the node outputs — which is
-all that is needed here; no PCE coefficients are stored.
+The calibrated model treats the wind convection constant c_c as LogNormal,
+ln c_c ~ N(ln median, σ_ln²).  As in the calibration, c_c is written as a
+function of a standard normal germ, c_c = median · exp(σ_ln ξ), and the
+pipeline builds an order-p Hermite PCE in ξ on the (p+1)-point Gauss–Hermite
+rule (same construction as ``src/simulation/pce_builder.py``).  A degree-p
+polynomial interpolating the p+1 Gauss nodes has its mean and variance
+integrated exactly by the same rule, so the PCE moments equal the weighted
+moments of the node outputs — which is all that is needed here; no PCE
+coefficients are stored.
 """
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 
-def lognormal_gauss_rule(mean: float, std: float, n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
-    """Nodes and weights of the n-point Gaussian rule for LogNormal(mean, std).
+def lognormal_hermite_rule(median: float, sigma_ln: float, n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Values c_i = median · exp(σ_ln ξ_i) and weights of the n-point Gauss–Hermite rule in ξ ~ N(0, 1).
 
-    Discretised Stieltjes procedure on a fine Gauss–Hermite grid of the
-    underlying normal variable, then Golub–Welsch.  Reproduces chaospy's
-    ``generate_quadrature(order, LogNormal, rule="gaussian")``.
+    Reproduces the nodes of chaospy's ``generate_quadrature(n - 1, Normal(0, 1), rule="gaussian")``
+    mapped to c_c; the weights sum to 1.
     """
     if n_nodes < 1:
         raise ValueError("n_nodes must be >= 1")
-    s_ln = math.sqrt(math.log1p((std / mean) ** 2))
-    m_ln = math.log(mean) - 0.5 * s_ln**2
-    xi, w = np.polynomial.hermite_e.hermegauss(200)
-    w = w / w.sum()
-    x = np.exp(m_ln + s_ln * xi)
-
-    # Stieltjes: monic orthogonal polynomials w.r.t. the discrete measure
-    alpha = np.zeros(n_nodes)
-    beta = np.zeros(n_nodes)
-    p_prev = np.zeros_like(x)
-    p = np.ones_like(x)
-    norm_prev = 1.0
-    for k in range(n_nodes):
-        norm = np.sum(w * p * p)
-        alpha[k] = np.sum(w * x * p * p) / norm
-        beta[k] = norm / norm_prev if k > 0 else norm
-        p, p_prev = (x - alpha[k]) * p - (beta[k] if k > 0 else 0.0) * p_prev, p
-        norm_prev = norm
-
-    J = np.diag(alpha) + np.diag(np.sqrt(beta[1:]), 1) + np.diag(np.sqrt(beta[1:]), -1)
-    nodes, vecs = np.linalg.eigh(J)
-    weights = vecs[0, :] ** 2
-    return nodes, weights / weights.sum()
+    xi, w = np.polynomial.hermite_e.hermegauss(n_nodes)
+    return median * np.exp(sigma_ln * xi), w / w.sum()
 
 
 def weighted_moments(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -74,7 +49,7 @@ def total_variance_moments(values: np.ndarray, weights: np.ndarray) -> tuple[np.
 
     so that ``var_c + var_x`` is the variance of the pooled ensemble with
     weights ``w_i / n_samples``.  Both outer moments use the Gauss rule, which
-    is exact for the degree-2 PCE (see the module doc).
+    is exact for the PCE of the same order (see the module doc).
     """
     w = weights.reshape((-1,) + (1,) * (values.ndim - 2))
     mean_x = values.mean(axis=-1)

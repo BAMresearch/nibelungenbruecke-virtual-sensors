@@ -25,7 +25,7 @@ from .fem.mesh import Mesh
 from .fem.probes import UNITS, build_probes
 from .fem.thermal import ThermalModel
 from .position import position_samples, section_probe
-from .uq import lognormal_gauss_rule, total_variance_moments, weighted_moments
+from .uq import lognormal_hermite_rule, total_variance_moments, weighted_moments
 
 log = logging.getLogger(__name__)
 
@@ -252,7 +252,7 @@ def transform(
 
     unc = cfg["uncertainty"]
     cc = unc["wind_convection_constant"]
-    nodes, weights = lognormal_gauss_rule(float(cc["mean"]), float(cc["std"]), int(unc["n_quadrature_nodes"]))
+    nodes, weights = lognormal_hermite_rule(float(cc["median"]), float(cc["sigma_ln"]), int(unc["n_quadrature_nodes"]))
 
     F = forcing[_ORDER].to_numpy()[: int(report[-1]) + 1]
 
