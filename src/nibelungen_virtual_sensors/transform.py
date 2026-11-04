@@ -25,7 +25,7 @@ from .fem.mesh import Mesh
 from .fem.probes import UNITS, build_probes
 from .fem.thermal import ThermalModel
 from .position import position_samples, section_probe
-from .uq import lognormal_hermite_rule, total_variance_moments, weighted_moments
+from .uq import convection_rule, total_variance_moments, weighted_moments
 
 log = logging.getLogger(__name__)
 
@@ -251,8 +251,7 @@ def transform(
     mesh.locate(positions)  # same error for every backend
 
     unc = cfg["uncertainty"]
-    cc = unc["wind_convection_constant"]
-    nodes, weights = lognormal_hermite_rule(float(cc["median"]), float(cc["sigma_ln"]), int(unc["n_quadrature_nodes"]))
+    nodes, weights = convection_rule(unc)      # (n_nodes, 2): c_top, c_ext
 
     F = forcing[_ORDER].to_numpy()[: int(report[-1]) + 1]
 
@@ -321,7 +320,7 @@ def simulate_numpy(cfg: dict, forcing: np.ndarray, dt: float, nodes: np.ndarray,
     """NumPy/SciPy finite-element backend.
 
     Runs the thermal (and, if needed, mechanical) model once per quadrature
-    node ``c_c`` over all ``forcing`` rows and returns the readings of the
+    node ``(c_top, c_ext)`` over all ``forcing`` rows and returns the readings of the
     rows ``first ... len(forcing)-1``, shape ``(n_nodes, n_rows, n_sensors)``.
     Every backend implements this signature.
     """
@@ -346,7 +345,7 @@ def simulate_numpy(cfg: dict, forcing: np.ndarray, dt: float, nodes: np.ndarray,
 
     Y = np.empty((len(nodes), len(forcing) - first, len(quantities)))
     for j, c in enumerate(nodes):
-        log.info("quadrature node %d/%d: c_c = %.4f", j + 1, len(nodes), c)
+        log.info("quadrature node %d/%d: c_top = %.4f, c_ext = %.4f", j + 1, len(nodes), *c)
 
         def collect(k: int, T: np.ndarray, j=j) -> None:
             y = PT @ T + offset
@@ -354,7 +353,7 @@ def simulate_numpy(cfg: dict, forcing: np.ndarray, dt: float, nodes: np.ndarray,
                 y[mech_rows] = W @ (T - T_ref)
             Y[j, k - first] = y
 
-        thermal.run(forcing, dt, float(c), n_initial_steps, first, collect)
+        thermal.run(forcing, dt, tuple(float(x) for x in c), n_initial_steps, first, collect)
     return Y
 
 

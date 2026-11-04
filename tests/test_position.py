@@ -15,7 +15,7 @@ from nibelungen_virtual_sensors.fem.mesh import Mesh
 from nibelungen_virtual_sensors.ifc.mapping import _place_in_model
 from nibelungen_virtual_sensors.position import _place, position_samples, section_probe
 from nibelungen_virtual_sensors.transform import load_ifc_config, load_model_config
-from nibelungen_virtual_sensors.uq import lognormal_hermite_rule, total_variance_moments, weighted_moments
+from nibelungen_virtual_sensors.uq import convection_rule, lognormal_hermite_rule, total_variance_moments, weighted_moments
 
 SAMPLE = Path(__file__).parents[1] / "examples" / "mkp_sample_2024-06-01_15.csv"
 COARSE = Path(__file__).parent / "data" / "coarse_hinge_mesh.npz"
@@ -86,8 +86,7 @@ def test_switch_off_matches_the_nominal_probe_run(inputs, sensors, runs):
     cfg = load_model_config()
     cfg["mesh_file"] = str(COARSE)
     unc = cfg["uncertainty"]
-    nodes, w = lognormal_hermite_rule(unc["wind_convection_constant"]["median"],
-                                      unc["wind_convection_constant"]["sigma_ln"], unc["n_quadrature_nodes"])
+    nodes, w = convection_rule(unc)
     forcing = _prepare_forcing(inputs, CH, "30min")
     F = forcing[["air_temperature", "cavity_temperature", "shortwave_irradiation", "wind_speed"]].to_numpy()
     pos = np.array([s["position"] for s in sensors])
