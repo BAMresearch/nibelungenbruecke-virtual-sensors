@@ -20,6 +20,7 @@ import json
 import logging
 import urllib.parse
 import urllib.request
+from time import sleep
 
 import pandas as pd
 
@@ -31,12 +32,31 @@ LOCATION = (49.9, 8.38)
 _ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 _FORECAST = "https://api.open-meteo.com/v1/forecast"
 _ARCHIVE_LAG_DAYS = 6
+_RETRY_DELAYS = (5, 10, 20, 40, 60)
 
 
 def _get(url: str, params: dict, timeout: float) -> dict:
     q = urllib.parse.urlencode(params)
-    with urllib.request.urlopen(f"{url}?{q}", timeout=timeout) as r:  # noqa: S310 (fixed https host)
-        return json.loads(r.read().decode())
+    attempt = 0
+    while True:
+        try:
+            with urllib.request.urlopen(f"{url}?{q}", timeout=timeout) as r:
+                return json.loads(r.read().decode())
+        except OSError as exc:
+            if attempt == len(_RETRY_DELAYS):
+                raise
+            delay = _RETRY_DELAYS[attempt]
+            attempt += 1
+            log.warning(
+                "Open-Meteo request for %s to %s failed; retry %d/%d in %d seconds: %s",
+                params.get("start_date"),
+                params.get("end_date"),
+                attempt,
+                len(_RETRY_DELAYS),
+                delay,
+                exc,
+            )
+            sleep(delay)
 
 
 def _utc_naive(t) -> pd.Timestamp:
