@@ -25,14 +25,14 @@ All dependencies are in `pyproject.toml`.
 ## Usage
 
 ```python
-from nibelungen_virtual_sensors import add_wind_speed, transform
+from nibelungen_virtual_sensors import add_weather, transform
 
-result = transform(add_wind_speed(df))   
+result = transform(add_weather(df))   
 ```
 
 With only the MKP channels in `df`:
 - the virtual sensors are the four temperature sensors `E+233TUS_*`;
-- `add_wind_speed(df)` attaches the wind speed from Open-Meteo.
+- `add_weather(df)` attaches the wind speed from Open-Meteo and, from September 2025 on, replaces the faulty measured irradiation by Open-Meteo's.
 
 Optional variants of the call:
 
@@ -58,15 +58,18 @@ Schema: `Timestamp: datetime64[ns]` (UTC), then one `float64` column per channel
 |---|---|---|
 | Outside air temperature | `F_plus_000TA_KaS-o-_Avg1` | °C |
 | Air temperature inside the box girder | `E_plus_040TI_HSS-u-_Avg` | °C |
-| Global shortwave irradiation | `F_plus_000S_KaS-o-_Avg1` | W/m² |
-| Wind speed (optional, see below) | `wind_speed_10m` | m/s |
+| Global shortwave irradiation (Open-Meteo from 2025-09-01, see below) | `F_plus_000S_KaS-o-_Avg1` | W/m² |
+| Wind speed (attached by `add_weather`, see below) | `wind_speed_10m` | m/s |
 
 The channel names are those of the MKP data API. Pass `input_channels={"air_temperature": "...", ...}` if the platform uses other names.
 
-**Wind speed** is not measured by MKP. `transform` needs the wind column, which the separate step `add_wind_speed(df)` attaches (no model, so it can run in its own container). By default it fetches hourly `wind_speed_10m` from api.open-meteo.com over HTTPS:
-- **Grid point:** 49.9 N, 8.35 E, the same as the calibration.
+**Wind speed and irradiation from Open-Meteo.** `transform` needs the wind column, which MKP does not measure. The separate step `add_weather(df)` attaches it (no model, so it can run in its own container). The same step handles the irradiation: the bridge pyranometer `F_plus_000S_KaS-o-` has been faulty since September 2025, so for every row from **2025-09-01 00:00 UTC** on the irradiation column is replaced by Open-Meteo `shortwave_radiation` (global horizontal irradiance). Rows before that keep the measured values, so a spin-up window that spans the date mixes both. Both variables come in one HTTPS request to open-meteo.com:
+- **Grid point:** 49.63 N, 8.38 E (the bridge), the same as the calibration.
 - **Endpoint:** the archive endpoint for dates more than 6 days back, the forecast endpoint for recent days.
-- **Without network:** `add_wind_speed(df, 2.7)` attaches a constant in m/s, or add the column yourself.
+- **Timing:** Open-Meteo gives the irradiation as the mean of the preceding hour. It is interpolated to the centre of each row's interval, so it means the same as the measured bin mean.
+- **Options:** `add_weather(df, irradiation="measured")` keeps the measured column; `irradiation="open-meteo"` replaces it for all rows. After the fault date the platform may omit the irradiation channel; it is then fetched for all rows.
+- **Without network:** `add_weather(df, 2.7)` attaches a constant wind speed in m/s, or add the column yourself. Before September 2025 this needs no network at all; after it, the irradiation still has to be fetched.
+- `add_wind_speed` is the former name of `add_weather` and does the same (irradiation included).
 
 ### Parameters (all basic Python types, only df is compulsory)
 
