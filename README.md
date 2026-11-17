@@ -25,14 +25,14 @@ All dependencies are in `pyproject.toml`.
 ## Usage
 
 ```python
-from nibelungen_virtual_sensors import add_wind_speed, transform
+from nibelungen_virtual_sensors import add_weather, transform
 
-result = transform(add_wind_speed(df))   
+result = transform(add_weather(df))   
 ```
 
 With only the MKP channels in `df`:
 - the virtual sensors are the four temperature sensors `E+233TUS_*`;
-- `add_wind_speed(df)` attaches the wind speed from Open-Meteo.
+- `add_weather(df)` attaches the wind speed from Open-Meteo and, from September 2025 on, replaces the faulty measured irradiation by Open-Meteo's.
 
 Optional variants of the call:
 
@@ -58,15 +58,18 @@ Schema: `Timestamp: datetime64[ns]` (UTC), then one `float64` column per channel
 |---|---|---|
 | Outside air temperature | `F_plus_000TA_KaS-o-_Avg1` | °C |
 | Air temperature inside the box girder | `E_plus_040TI_HSS-u-_Avg` | °C |
-| Global shortwave irradiation | `F_plus_000S_KaS-o-_Avg1` | W/m² |
-| Wind speed (optional, see below) | `wind_speed_10m` | m/s |
+| Global shortwave irradiation (Open-Meteo from 2025-09-01, see below) | `F_plus_000S_KaS-o-_Avg1` | W/m² |
+| Wind speed (attached by `add_weather`, see below) | `wind_speed_10m` | m/s |
 
 The channel names are those of the MKP data API. Pass `input_channels={"air_temperature": "...", ...}` if the platform uses other names.
 
-**Wind speed** is not measured by MKP. `transform` needs the wind column, which the separate step `add_wind_speed(df)` attaches (no model, so it can run in its own container). By default it fetches hourly `wind_speed_10m` from api.open-meteo.com over HTTPS:
-- **Grid point:** 49.9 N, 8.38 E, the same as the calibration.
+**Wind speed and irradiation from Open-Meteo.** `transform` needs the wind column, which MKP does not measure. The separate step `add_weather(df)` attaches it (no model, so it can run in its own container). The same step handles the irradiation: the bridge pyranometer `F_plus_000S_KaS-o-` has been faulty since September 2025, so for every row from **2025-09-01 00:00 UTC** on the irradiation column is replaced by Open-Meteo `shortwave_radiation` (global horizontal irradiance). Rows before that keep the measured values, so a spin-up window that spans the date mixes both. Both variables come in one HTTPS request to open-meteo.com:
+- **Grid point:** 49.63 N, 8.38 E (the bridge), the same as the calibration.
 - **Endpoint:** the archive endpoint for dates more than 6 days back, the forecast endpoint for recent days.
-- **Without network:** `add_wind_speed(df, 2.7)` attaches a constant in m/s, or add the column yourself.
+- **Timing:** Open-Meteo gives the irradiation as the mean of the preceding hour. It is interpolated to the centre of each row's interval, so it means the same as the measured bin mean.
+- **Options:** `add_weather(df, irradiation="measured")` keeps the measured column; `irradiation="open-meteo"` replaces it for all rows. After the fault date the platform may omit the irradiation channel; it is then fetched for all rows.
+- **Without network:** `add_weather(df, 2.7)` attaches a constant wind speed in m/s, or add the column yourself. Before September 2025 this needs no network at all; after it, the irradiation still has to be fetched.
+- `add_wind_speed` is the former name of `add_weather` and does the same (irradiation included).
 
 ### Parameters (all basic Python types, only df is compulsory)
 
@@ -145,10 +148,10 @@ The twins are explicit sensors at their calibrated positions, so they carry no p
   - A mechanical reading is a linear function of the temperature. One adjoint solve per mechanical sensor, done once per call, therefore replaces a solve per time step and per quadrature node.
   - The solver is ILU-preconditioned GMRES (30–50 iterations), so no factorisation of the 129,000-unknown stiffness matrix is needed (peak memory 1.0 GB).
 - **Element degree.** P2 is the default, as in the calibrated 2-D model. The study in `MODEL_ERRORS_GEOMETRY_DISCRETIZATION.md` of the research repository found that linear (P1) elements leave about 0.3 °C and 20 % (tilt, tip deflection) error at any mesh size, against < 0.1 °C and 1 % for P2. P1 stays available for quick checks: `model_overrides={"thermal": {"degree": 1}, "mechanical": {"degree": 1}}`.
-- **Calibration.** Updated 2-D calibration of the cross-section; values in `data/model_config.json`.
-  - The wind-convection constant c_c is uncertain: LogNormal with mean 1.0502 and standard deviation 0.7763 (c_r = 1.0163 for the shortwave constant).
-  - The model runs at the 3 Gauss nodes of this distribution, which is equivalent to an order-2 polynomial chaos.
-  - The interval contains only what the calibration propagates: the uncertainty of c_c and, for temperatures, the sensor position. The residual error calibrated at the pilot sensors (0.15–0.44 °C), the part the model does not explain, is not transferred to virtual sensors.
+- **Calibration.** 2-D calibration of the cross-section; values in `data/model_config.json`.
+  - The wind convection has two uncertain correction factors, both LogNormal: c_top on the deck top (median 0.447, standard deviation 0.468 of ln c_top) and c_ext on all other external faces (median 1.672, standard deviation 2.258 of ln c_ext). The shortwave constant is c_r = 0.706. The convection with the cavity air is not corrected.
+  - As in the calibration, c_j = median_j · exp(σ_ln,j ξ_j) with independent standard normal ξ_j. The model runs at the 5 × 5 = 25 nodes of the tensor Gauss–Hermite rule in (ξ_top, ξ_ext), which is equivalent to an order-4 polynomial chaos.
+  - The interval contains only what the calibration propagates: the uncertainty of c_top and c_ext and, for temperatures, the sensor position. The calibrated noise of the pilot sensors (0.14–0.38 °C: residual model error and measurement noise), the part the embedding does not explain, is not transferred to virtual sensors.
 - **Validation.**
   - With P2 on the packaged mesh, this package reproduces the stored results of the FEniCSx research code (June 2024 thermal ensemble, June 2025 hindcast) to 7.1e-9 K for temperatures and 1.7e-10 (relative) for tilt and tip displacement, rerun with the updated calibration (`tools/validate_against_pipeline.py`, 11 min, 0.9 GB).
   - Against measurements on the demo day (June 2024), the 95 % intervals of the four pilot sensors contain 100 % of the measured temperatures (table above).

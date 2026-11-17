@@ -7,9 +7,10 @@ spin-up + the report day 2024-06-15) and
 
 1. predicts virtual twins of real MKP sensors and compares them with the
    measurements (explicit ``virtual_sensors`` in model coordinates);
-2. runs exactly what the platform would call, ``transform(add_wind_speed(df))`` with only
+2. runs exactly what the platform would call, ``transform(add_weather(df))`` with only
    the MKP channels: the virtual sensors come from MKP's sensor IFC model
-   (packaged mapping of ``E+233TUS_*``) and the wind speed from Open-Meteo.
+   (packaged mapping of ``E+233TUS_*``) and the wind speed from Open-Meteo (irradiation
+   is measured: the sample predates the sensor fault of September 2025).
    The result is written next to this script as ``demo_output.csv``.
 """
 
@@ -22,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from nibelungen_virtual_sensors import DEFAULT_INPUT_CHANNELS, add_wind_speed, transform
+from nibelungen_virtual_sensors import DEFAULT_INPUT_CHANNELS, add_weather, transform
 
 HERE = Path(__file__).resolve().parent
 
@@ -68,7 +69,7 @@ def main() -> None:
     # 2. the platform call: MKP channels only
     mkp_only = df.drop(columns=[DEFAULT_INPUT_CHANNELS["wind_speed"]])
     try:
-        out = transform(add_wind_speed(mkp_only))       # wind from Open-Meteo
+        out = transform(add_weather(mkp_only))       # wind from Open-Meteo
     except RuntimeError as exc:                         # offline
         print(f"\n{exc}\n-> using the wind column of the sample instead")
         out = transform(df)

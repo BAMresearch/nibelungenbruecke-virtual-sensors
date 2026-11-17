@@ -25,7 +25,7 @@ from .fem.mesh import Mesh
 from .fem.probes import UNITS, build_probes
 from .fem.thermal import ThermalModel
 from .position import position_samples, section_probe
-from .uq import lognormal_gauss_rule, total_variance_moments, weighted_moments
+from .uq import convection_rule, total_variance_moments, weighted_moments
 
 log = logging.getLogger(__name__)
 
@@ -53,8 +53,10 @@ def load_ifc_config() -> dict:
 #: Model input -> default MKP channel name (``input_channels`` of
 #: ``data/model_config.json``, as in the ``sensors.mkp`` section of
 #: ``code/config/pipeline_config.yaml``).  Wind speed is not measured by MKP;
-#: the column is attached beforehand by :func:`.weather.add_wind_speed`
-#: (Open-Meteo ``wind_speed_10m`` or a constant).
+#: the column is attached beforehand by :func:`.weather.add_weather`
+#: (Open-Meteo ``wind_speed_10m`` or a constant), which also replaces the
+#: irradiation by Open-Meteo ``shortwave_radiation`` after the sensor fault
+#: (September 2025).
 DEFAULT_INPUT_CHANNELS: dict[str, str] = {
     k: v for k, v in load_model_config()["input_channels"].items() if not k.startswith("_")
 }
@@ -100,7 +102,7 @@ def _prepare_forcing(df: pd.DataFrame, channels: dict, timestep: str) -> pd.Data
         if col in data.columns and data[col].notna().any():
             out[role] = pd.to_numeric(data[col], errors="coerce").astype("float64")
         else:
-            hint = " (attach it with add_wind_speed)" if role == "wind_speed" else ""
+            hint = " (attach it with add_weather)" if role in ("wind_speed", "shortwave_irradiation") else ""
             raise ValueError(f"input channel '{col}' for {role} missing or empty{hint}")
 
     # Same preprocessing as the data generation of the research pipeline:
@@ -139,7 +141,7 @@ def transform(
     df
         Measured inputs, schema ``Timestamp: datetime64[ns], <channel>: float64, ...``
         (see :data:`DEFAULT_INPUT_CHANNELS`, including the wind speed column, see
-        :func:`.weather.add_wind_speed`).  It must cover the report window
+        :func:`.weather.add_weather`).  It must cover the report window
         **plus** the spin-up history before it: the thermal state is rebuilt
         from scratch on every call.  14 days of history (``min_history_hours``)
         reproduce the calibrated set-up; less is accepted with a warning.  The
@@ -251,8 +253,7 @@ def transform(
     mesh.locate(positions)  # same error for every backend
 
     unc = cfg["uncertainty"]
-    cc = unc["wind_convection_constant"]
-    nodes, weights = lognormal_gauss_rule(float(cc["mean"]), float(cc["std"]), int(unc["n_quadrature_nodes"]))
+    nodes, weights = convection_rule(unc)      # (n_nodes, 2): c_top, c_ext
 
     F = forcing[_ORDER].to_numpy()[: int(report[-1]) + 1]
 
@@ -321,7 +322,7 @@ def simulate_numpy(cfg: dict, forcing: np.ndarray, dt: float, nodes: np.ndarray,
     """NumPy/SciPy finite-element backend.
 
     Runs the thermal (and, if needed, mechanical) model once per quadrature
-    node ``c_c`` over all ``forcing`` rows and returns the readings of the
+    node ``(c_top, c_ext)`` over all ``forcing`` rows and returns the readings of the
     rows ``first ... len(forcing)-1``, shape ``(n_nodes, n_rows, n_sensors)``.
     Every backend implements this signature.
     """
@@ -346,7 +347,7 @@ def simulate_numpy(cfg: dict, forcing: np.ndarray, dt: float, nodes: np.ndarray,
 
     Y = np.empty((len(nodes), len(forcing) - first, len(quantities)))
     for j, c in enumerate(nodes):
-        log.info("quadrature node %d/%d: c_c = %.4f", j + 1, len(nodes), c)
+        log.info("quadrature node %d/%d: c_top = %.4f, c_ext = %.4f", j + 1, len(nodes), *c)
 
         def collect(k: int, T: np.ndarray, j=j) -> None:
             y = PT @ T + offset
@@ -354,7 +355,7 @@ def simulate_numpy(cfg: dict, forcing: np.ndarray, dt: float, nodes: np.ndarray,
                 y[mech_rows] = W @ (T - T_ref)
             Y[j, k - first] = y
 
-        thermal.run(forcing, dt, float(c), n_initial_steps, first, collect)
+        thermal.run(forcing, dt, tuple(float(x) for x in c), n_initial_steps, first, collect)
     return Y
 
 

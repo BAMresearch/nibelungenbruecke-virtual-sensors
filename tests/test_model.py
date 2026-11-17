@@ -15,7 +15,7 @@ from nibelungen_virtual_sensors.fem.mesh import Mesh
 from nibelungen_virtual_sensors.fem.probes import build_probes
 from nibelungen_virtual_sensors.fem.thermal import ThermalModel
 from nibelungen_virtual_sensors.transform import load_model_config
-from nibelungen_virtual_sensors.uq import lognormal_gauss_rule, weighted_moments
+from nibelungen_virtual_sensors.uq import convection_rule, lognormal_hermite_rule, lognormal_hermite_tensor_rule, weighted_moments
 
 COARSE = Path(__file__).parent / "data" / "coarse_hinge_mesh.npz"
 
@@ -31,14 +31,43 @@ def mesh():
 
 
 def test_quadrature_matches_pipeline_pce():
-    # results/simulations/pce_no_hr.pkl of the research pipeline (chaospy)
-    nodes, weights = lognormal_gauss_rule(1.0502, 0.7763, 3)
-    np.testing.assert_allclose(nodes, [0.68525864, 2.51141708, 9.20413900], rtol=1e-7)
-    np.testing.assert_allclose(weights, [8.04618962e-01, 1.94164099e-01, 1.21693852e-03], rtol=1e-7)
-    # 3-point Gauss rule is exact for the LogNormal mean and variance
-    mean, var = weighted_moments(nodes[:, None], weights)
-    assert mean[0] == pytest.approx(1.0502, rel=1e-10)
-    assert np.sqrt(var[0]) == pytest.approx(0.7763, rel=1e-10)
+    # nodes of results/simulations/pce_no_hr.pkl (chaospy order-4 Gauss-Hermite in xi, mapped to c_c)
+    nodes, weights = lognormal_hermite_rule(1.28, 2.052, 5)
+    xi = np.array([-2.85697001, -1.35562618, 0.0, 1.35562618, 2.85697001])
+    np.testing.assert_allclose(nodes, 1.28 * np.exp(2.052 * xi), rtol=1e-7)
+    np.testing.assert_allclose(weights, [1.12574113e-02, 2.22075922e-01, 5.33333333e-01, 2.22075922e-01, 1.12574113e-02],
+                               rtol=1e-7)
+    # the 5-point rule is exact for the mean and variance of ln c_c
+    mean, var = weighted_moments(np.log(nodes)[:, None], weights)
+    assert mean[0] == pytest.approx(np.log(1.28), abs=1e-12)
+    assert np.sqrt(var[0]) == pytest.approx(2.052, rel=1e-12)
+
+
+def test_tensor_rule_matches_pipeline_pce():
+    # results/simulations/pce_no_hr.pkl: chaospy tensor rule (sparse=False) of order 4 in (xi_top, xi_ext),
+    # the first germ varying slowest, mapped to (c_top, c_ext)
+    values, weights = lognormal_hermite_tensor_rule([(0.447, 0.468), (1.672, 2.258)], 5)
+    c_top, w_top = lognormal_hermite_rule(0.447, 0.468, 5)
+    c_ext, w_ext = lognormal_hermite_rule(1.672, 2.258, 5)
+    assert values.shape == (25, 2)
+    np.testing.assert_allclose(values[:, 0], np.repeat(c_top, 5))
+    np.testing.assert_allclose(values[:, 1], np.tile(c_ext, 5))
+    np.testing.assert_allclose(weights, np.outer(w_top, w_ext).ravel())
+    assert weights.sum() == pytest.approx(1.0, abs=1e-14)
+    # the rule is exact for the mean and variance of each ln c_j, and the factors are independent
+    mean, var = weighted_moments(np.log(values), weights)
+    np.testing.assert_allclose(mean, np.log([0.447, 1.672]), atol=1e-12)
+    np.testing.assert_allclose(np.sqrt(var), [0.468, 2.258], rtol=1e-12)
+    cov = (weights * (np.log(values[:, 0]) - mean[0]) * (np.log(values[:, 1]) - mean[1])).sum()
+    assert cov == pytest.approx(0.0, abs=1e-12)
+
+
+def test_convection_rule_reads_the_calibration(cfg):
+    values, weights = convection_rule(cfg["uncertainty"])
+    cf = cfg["uncertainty"]["convection_factors"]
+    central = int(np.argmax(weights))
+    np.testing.assert_allclose(values[central], [cf["top"]["median"], cf["external"]["median"]], rtol=1e-12)
+    assert len(weights) == cfg["uncertainty"]["n_quadrature_nodes"] ** 2
 
 
 def test_default_degree_is_p2(cfg):
@@ -109,6 +138,22 @@ def test_thermal_relaxes_to_ambient(mesh, cfg, degree):
     last = {}
     th.run(forcing, 3 * 86400.0, 1.0, 0, 399, lambda k, T: last.update(T=T))
     np.testing.assert_allclose(PT @ last["T"] + off, 5.0, atol=0.05)
+
+
+def test_convection_factors_per_boundary(mesh, cfg):
+    """One value for both boundaries equals the pair (c, c); c_top acts on the deck, c_ext on the other faces."""
+    th = ThermalModel(mesh, {**cfg["thermal"], "degree": 1})
+    forcing = np.tile([25.0, 15.0, 600.0, 3.0], (12, 1))
+    PT, _, off, _ = build_probes(mesh, ["temperature"] * 2, np.array([[2.85, -0.1, 5.0], [3.65, -2.6, 5.0]]), 1)
+
+    def run(c):
+        out = {}
+        th.run(forcing, 1800.0, c, 0, 11, lambda k, T: out.update(y=PT @ T + off))
+        return out["y"]
+
+    np.testing.assert_array_equal(run(1.3), run((1.3, 1.3)))
+    base, top = run((1.0, 1.0)), run((3.0, 1.0))
+    assert abs(top[0] - base[0]) > 10 * abs(top[1] - base[1])   # deck reacts to c_top, the web hardly
 
 
 @pytest.mark.parametrize("degree", [1, 2])

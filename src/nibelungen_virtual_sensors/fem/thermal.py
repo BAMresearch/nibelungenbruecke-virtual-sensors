@@ -5,8 +5,8 @@ Re-implements, without dolfinx, the thermal model of the research pipeline
 ``simulation.thermal_3d`` settings of ``config/pipeline_config.yaml``):
 
     ρ c_p (T - T_old)/dt - ∇·(k ∇T) = 0                    in Ω
-    k ∂T/∂n = c_c h_wind(v) (T_air - T) + c_r a I          on top (tag 9)
-    k ∂T/∂n = c_c h_wind(v) (T_air - T)                    on outer faces (tag 8)
+    k ∂T/∂n = c_top h_wind(v) (T_air - T) + c_r a I        on top (tag 9)
+    k ∂T/∂n = c_ext h_wind(v) (T_air - T)                  on outer faces (tag 8)
     k ∂T/∂n = h_in (T_in - T)                              on the cavity (tag 42)
     k ∂T/∂n = 0                                            on the end faces
 
@@ -99,7 +99,9 @@ class ThermalModel:
         K = cell_matrix(sp_, v[:, None, None] * Kloc)
 
         tags = p["boundary_tags"]
-        self.Mb_out = boundary_mass(sp_, [tags["top"], tags["bottom"], tags["external"]])
+        # per-boundary convection factors, as in the calibration: deck top and all other external faces
+        self.Mb_top = boundary_mass(sp_, [tags["top"]])
+        self.Mb_ext = boundary_mass(sp_, [tags["bottom"], tags["external"]])
         self.Mb_hole = boundary_mass(sp_, [tags["hole"]])
         self.b_top = boundary_load(sp_, [tags["top"]])
         hole_f = mesh.facets_with_tags([tags["hole"]])
@@ -120,13 +122,14 @@ class ThermalModel:
         self,
         forcing: np.ndarray,
         dt: float,
-        wind_constant: float,
+        wind_constant: float | tuple[float, float],
         n_initial_steps: int,
         collect_from: int,
         on_step,
     ) -> None:
         """Integrate over the forcing rows.
 
+        ``wind_constant`` is ``(c_top, c_ext)``, or one value for both boundaries.
         ``forcing`` columns: air temperature [°C], cavity air temperature
         [°C], shortwave irradiation [W/m²], wind speed [m/s].  The first row
         is repeated ``n_initial_steps`` times to reach a periodic-ish initial
@@ -139,6 +142,8 @@ class ThermalModel:
         A_static = (mc * self.M + self.K + self.A_hole).tocsr()
         Mmc = (mc * self.M).tocsr()
         absorbed = float(p["shortwave_radiation_constant"]) * float(p["absorptivity"])
+        c_top, c_ext = (wind_constant, wind_constant) if np.ndim(wind_constant) == 0 else wind_constant
+        Mb_c = (float(c_top) * self.Mb_top + float(c_ext) * self.Mb_ext).tocsr()
 
         T = np.full(self.space.n, float(p["initial_temperature"]))
         T_amb = np.empty_like(T)
@@ -147,9 +152,9 @@ class ThermalModel:
             t_air, t_in, irr, wind = forcing[k]
             T_amb[:] = t_air + KELVIN
             T_amb[self.hole_nodes] = t_in + KELVIN
-            hw = wind_constant * self.h_wind(wind)
-            A = A_static + hw * self.Mb_out
-            rhs = Mmc @ T + hw * (self.Mb_out @ T_amb) + self.A_hole @ T_amb + absorbed * irr * self.b_top
+            hw = self.h_wind(wind)
+            A = A_static + hw * Mb_c
+            rhs = Mmc @ T + hw * (Mb_c @ T_amb) + self.A_hole @ T_amb + absorbed * irr * self.b_top
             # SPD system; Jacobi-CG warm-started from the previous step is
             # ~10x faster than a direct solve and agrees to ~1e-9 K.
             jac = 1.0 / A.diagonal()

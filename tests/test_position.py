@@ -15,7 +15,7 @@ from nibelungen_virtual_sensors.fem.mesh import Mesh
 from nibelungen_virtual_sensors.ifc.mapping import _place_in_model
 from nibelungen_virtual_sensors.position import _place, position_samples, section_probe
 from nibelungen_virtual_sensors.transform import load_ifc_config, load_model_config
-from nibelungen_virtual_sensors.uq import lognormal_gauss_rule, total_variance_moments, weighted_moments
+from nibelungen_virtual_sensors.uq import convection_rule, lognormal_hermite_rule, total_variance_moments, weighted_moments
 
 SAMPLE = Path(__file__).parents[1] / "examples" / "mkp_sample_2024-06-01_15.csv"
 COARSE = Path(__file__).parent / "data" / "coarse_hinge_mesh.npz"
@@ -86,8 +86,7 @@ def test_switch_off_matches_the_nominal_probe_run(inputs, sensors, runs):
     cfg = load_model_config()
     cfg["mesh_file"] = str(COARSE)
     unc = cfg["uncertainty"]
-    nodes, w = lognormal_gauss_rule(unc["wind_convection_constant"]["mean"],
-                                    unc["wind_convection_constant"]["std"], unc["n_quadrature_nodes"])
+    nodes, w = convection_rule(unc)
     forcing = _prepare_forcing(inputs, CH, "30min")
     F = forcing[["air_temperature", "cavity_temperature", "shortwave_irradiation", "wind_speed"]].to_numpy()
     pos = np.array([s["position"] for s in sensors])
@@ -165,15 +164,16 @@ def test_total_variance_equals_pooled_ensemble():
 
 def test_total_variance_linear_case():
     """Y = a(c) + b x with x uniform: Var_c[E_x Y] = Var(a), E_c Var_x Y = b² Var(x)."""
-    nodes, w = lognormal_gauss_rule(1.0502, 0.7763, 3)
+    nodes, w = lognormal_hermite_rule(1.28, 2.052, 5)
+    c_mean = (w * nodes).sum(); c_var = (w * (nodes - c_mean) ** 2).sum()   # moments of c under the rule
     n = 4096
     x = (np.arange(n) + 0.5) / n                                # uniform on (0, 1)
     b = 2.5
     Y = nodes[:, None, None] * 3.0 + b * x[None, None, :]
     mean, var_c, var_x = total_variance_moments(Y, w)
-    assert var_c[0] == pytest.approx(9 * 0.7763**2, rel=1e-9)
+    assert var_c[0] == pytest.approx(9 * c_var, rel=1e-9)
     assert var_x[0] == pytest.approx(b**2 / 12.0, rel=1e-6)
-    assert mean[0] == pytest.approx(3 * 1.0502 + b / 2, rel=1e-9)
+    assert mean[0] == pytest.approx(3 * c_mean + b / 2, rel=1e-9)
 
 
 # ── (iv) samples lie inside the member ────────────────────────────────────────
