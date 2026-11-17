@@ -53,8 +53,10 @@ def load_ifc_config() -> dict:
 #: Model input -> default MKP channel name (``input_channels`` of
 #: ``data/model_config.json``, as in the ``sensors.mkp`` section of
 #: ``code/config/pipeline_config.yaml``).  Wind speed is not measured by MKP;
-#: the column is attached beforehand by :func:`.weather.add_wind_speed`
-#: (Open-Meteo ``wind_speed_10m`` or a constant).
+#: the column is attached beforehand by :func:`.weather.add_weather`
+#: (Open-Meteo ``wind_speed_10m`` or a constant), which also replaces the
+#: irradiation by Open-Meteo ``shortwave_radiation`` after the sensor fault
+#: (September 2025).
 DEFAULT_INPUT_CHANNELS: dict[str, str] = {
     k: v for k, v in load_model_config()["input_channels"].items() if not k.startswith("_")
 }
@@ -100,7 +102,7 @@ def _prepare_forcing(df: pd.DataFrame, channels: dict, timestep: str) -> pd.Data
         if col in data.columns and data[col].notna().any():
             out[role] = pd.to_numeric(data[col], errors="coerce").astype("float64")
         else:
-            hint = " (attach it with add_wind_speed)" if role == "wind_speed" else ""
+            hint = " (attach it with add_weather)" if role in ("wind_speed", "shortwave_irradiation") else ""
             raise ValueError(f"input channel '{col}' for {role} missing or empty{hint}")
 
     # Same preprocessing as the data generation of the research pipeline:
@@ -139,7 +141,7 @@ def transform(
     df
         Measured inputs, schema ``Timestamp: datetime64[ns], <channel>: float64, ...``
         (see :data:`DEFAULT_INPUT_CHANNELS`, including the wind speed column, see
-        :func:`.weather.add_wind_speed`).  It must cover the report window
+        :func:`.weather.add_weather`).  It must cover the report window
         **plus** the spin-up history before it: the thermal state is rebuilt
         from scratch on every call.  14 days of history (``min_history_hours``)
         reproduce the calibrated set-up; less is accepted with a warning.  The
