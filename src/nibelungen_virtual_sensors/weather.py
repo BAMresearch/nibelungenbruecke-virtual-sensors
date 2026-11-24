@@ -4,10 +4,10 @@
   ``wind_speed_10m`` [m/s] of the Open-Meteo archive API at the bridge
   (49.63 N, 8.38 E, ``sensors.open_meteo.location`` of the research pipeline),
   kept here so the calibrated convection factors stay consistent.
-* **Shortwave irradiation.**  The bridge pyranometer (``F_plus_000S_KaS-o-``)
-  has been faulty since September 2025.  From :data:`IRRADIATION_FAULT_START`
-  on, the measured column is replaced by Open-Meteo ``shortwave_radiation``
-  [W/m²] (global horizontal irradiance) at the same grid point.
+* **Shortwave irradiation.** From :data:`IRRADIATION_FAULT_START`, the
+  bridge pyranometer values (``F_plus_000S_KaS-o-``) are replaced with
+  Open-Meteo ``shortwave_radiation`` [W/m²] (global horizontal irradiance)
+  at the same grid point. Missing values are also filled before that date.
 
 The archive lags real time by about five days, so recent days are taken from
 the forecast API (``past_days``), i.e. from a different model chain than the
@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 
 LOCATION = (49.63, 8.38)
 #: First time stamp (UTC) at which the bridge irradiation sensor is faulty.
-IRRADIATION_FAULT_START = pd.Timestamp("2025-09-01")
+IRRADIATION_FAULT_START = pd.Timestamp("2025-07-01")
 _ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 _FORECAST = "https://api.open-meteo.com/v1/forecast"
 _ARCHIVE_LAG_DAYS = 6
@@ -124,7 +124,7 @@ def _interp(s: pd.Series, at: pd.DatetimeIndex) -> np.ndarray:
 
 def add_weather(df: pd.DataFrame, wind_speed: float | str = "open-meteo",
                 irradiation: str = "auto", input_channels: dict | None = None,
-                fault_start=IRRADIATION_FAULT_START) -> pd.DataFrame:
+                fault_start: str | pd.Timestamp = IRRADIATION_FAULT_START) -> pd.DataFrame:
     """Return a copy of ``df`` with the wind speed attached and the faulty irradiation replaced.
 
     ``df`` has the schema of :func:`.transform`, without the wind column and,
@@ -139,17 +139,17 @@ def add_weather(df: pd.DataFrame, wind_speed: float | str = "open-meteo",
         network) and interpolates it to the time stamps of ``df``; a number is
         a constant wind speed [m/s].
     irradiation
-        ``"auto"`` keeps the measured irradiation before ``fault_start`` and
-        takes Open-Meteo ``shortwave_radiation`` from then on (all rows if the
-        column is missing); ``"open-meteo"`` takes it for all rows;
-        ``"measured"`` leaves the column untouched.  Open-Meteo gives the mean
-        of the preceding hour; it is placed at the centre of that hour and
-        interpolated to the centre of each row's interval, as the measured
-        bin means.
+        ``"auto"`` keeps measured values before ``fault_start``, fills missing
+        values, and replaces all values from ``fault_start`` onward with
+        Open-Meteo ``shortwave_radiation``; ``"open-meteo"`` takes it for all
+        rows; ``"measured"`` leaves the column untouched. Open-Meteo gives the
+        mean of the preceding hour; it is placed at the centre of that hour and
+        interpolated to the centre of each row's interval, as the measured bin
+        means.
     input_channels
         Overrides of :data:`.DEFAULT_INPUT_CHANNELS` (role -> column name).
     fault_start
-        First time stamp (UTC) at which the irradiation sensor is faulty.
+        First time stamp (UTC) at which measured irradiation is replaced.
     """
     channels = {**DEFAULT_INPUT_CHANNELS, **(input_channels or {})}
     wind_col, irr_col = channels["wind_speed"], channels["shortwave_irradiation"]
@@ -167,10 +167,12 @@ def add_weather(df: pd.DataFrame, wind_speed: float | str = "open-meteo",
 
     if irradiation == "measured":
         replace = np.zeros(len(utc), bool)
-    elif irradiation == "open-meteo" or irr_col not in df.columns:
+    elif irradiation == "open-meteo":
         replace = np.ones(len(utc), bool)
     else:
-        replace = np.asarray(utc >= _utc_naive(fault_start))
+        measured = (pd.to_numeric(df[irr_col], errors="coerce").to_numpy("float64")
+                    if irr_col in df.columns else np.full(len(utc), np.nan))
+        replace = np.isnan(measured) | (utc >= _utc_naive(fault_start))
 
     variables = ([_WIND] if wind_speed == "open-meteo" else []) + ([_IRR] if replace.any() else [])
     if variables:
@@ -194,7 +196,8 @@ def add_weather(df: pd.DataFrame, wind_speed: float | str = "open-meteo",
                     if irr_col in out.columns else np.full(len(utc), np.nan))
         out[irr_col] = np.where(replace, g_rows, measured)
         log.info("shortwave irradiation: Open-Meteo shortwave_radiation for %d of %d rows "
-                 "(sensor faulty since %s)", replace.sum(), len(utc), f"{_utc_naive(fault_start):%Y-%m-%d}")
+                 "(sensor faulty since %s)", replace.sum(), len(utc),
+                 f"{_utc_naive(fault_start):%Y-%m-%d}")
     out.attrs = dict(df.attrs)
     return out
 
