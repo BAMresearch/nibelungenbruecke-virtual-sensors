@@ -36,7 +36,7 @@ OUTPUT_SUFFIXES = {"mean": "", "std": "_std", "lower": "_lower", "upper": "_uppe
 
 
 def _data_path(name: str) -> Path:
-    return Path(str(resources.files("nibelungen_virtual_sensors") / "data" / name))
+    return Path(str(resources.files(__package__) / "data" / name))
 
 
 def load_model_config() -> dict:
@@ -55,8 +55,7 @@ def load_ifc_config() -> dict:
 #: ``code/config/pipeline_config.yaml``).  Wind speed is not measured by MKP;
 #: the column is attached beforehand by :func:`.weather.add_weather`
 #: (Open-Meteo ``wind_speed_10m`` or a constant), which also replaces the
-#: irradiation by Open-Meteo ``shortwave_radiation`` after the sensor fault
-#: (September 2025).
+#: irradiation by Open-Meteo ``shortwave_radiation`` after the sensor fault.
 DEFAULT_INPUT_CHANNELS: dict[str, str] = {
     k: v for k, v in load_model_config()["input_channels"].items() if not k.startswith("_")
 }
